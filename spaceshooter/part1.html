@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<title>Phaser - Making your first game, part 1</title>
+	<script type="text/javascript" src="js/phaser.min.js"></script>
+    <style type="text/css">
+        body {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<script type="text/javascript">
+
+var game = new Phaser.Game(800, 600, Phaser.AUTO, '', { preload: preload, create: create, update: update });
+
+function preload() {
+	game.load.image('starfield', 'assets/starfield.png');
+	game.load.spritesheet('ship', 'assets/ship.png', 171, 340);
+	game.load.image('bullet', 'assets/bullet.png');
+	game.load.image('enemy', 'assets/alienspaceship.png');
+	game.load.image('enemyLaser', 'assets/enemyLaser.png');
+	game.load.spritesheet('explo', 'assets/explosion.png', 47.5, 48);
+
+	game.load.audio('blaster', 'assets/sounds/blaster.wav');
+	game.load.audio('boom', 'assets/sounds/explosion.wav');
+}
+
+var player;
+var score = 0;
+var scoreText;
+var cursors;
+var spacefield;
+var playerHealtText;
+var playerLives = 4;
+
+var enemyShip;
+var enemyLaunchTimer;
+var enemyShipSpacing = 2500;
+var enemyBullets;
+var enemyFire;
+var explosions;
+
+
+var bullets;
+var bulletTime = 0;
+var fireButton;
+
+var gameOverText;
+
+function create() {
+	//game pre-settings
+	game.physics.startSystem(Phaser.Physics.ARCADE);
+	spacefield = game.add.tileSprite(0,0,800, 600, 'starfield');
+	cursors = game.input.keyboard.createCursorKeys();
+
+	//Player
+	player = game.add.sprite(50, game.world.height / 2, 'ship');
+	player.scale.setTo(0.25, 0.25);
+	game.physics.arcade.enable(player);
+	player.body.collideWorldBounds = true;
+
+	player.animations.add('down', [1, 2, 3], 1, false);
+	player.animations.add('up', [6, 7, 8], 1, false);
+
+	//player bullets
+	bullets = game.add.group();
+	bullets.enableBody = true;
+	game.physics.arcade.enable(bullets);
+	bullets.createMultiple(30, 'bullet');
+	bullets.setAll('anchor.x', 0.5);
+	bullets.setAll('anchor.y', 1);
+	bullets.setAll('outOfBoundsKill', true);
+	bullets.setAll('checkWorldBounds', true);
+	fireButton = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+
+	//enemy ships
+	enemyShip = game.add.group();
+	enemyShip.enableBody = true;
+	game.physics.arcade.enable(enemyShip);
+	enemyShip.createMultiple(300, 'enemy');
+	enemyShip.setAll('anchor.x', 0.5);
+	enemyShip.setAll('anchor.y', 0.5);
+	enemyShip.setAll('angle', -90);
+
+	//enemy bullets
+	enemyBullets = game.add.group();
+	enemyBullets.enableBody = true;
+	game.physics.arcade.enable(enemyBullets);
+	enemyBullets.createMultiple(50, 'enemyLaser');
+	enemyBullets.setAll('anchor.x', 0.5);
+	enemyBullets.setAll('anchor.y', 0.5);
+	enemyBullets.setAll('outOfBoundsKill', true);
+	enemyBullets.setAll('checkWorldBounds', true);
+
+
+	//explosions
+	explosions = game.add.group();
+	explosions.createMultiple(50, 'explo');
+	explosions.forEach(setupExplosions, this);
+
+
+	//sounds
+	game.blaster = game.add.audio('blaster');
+	game.boom = game.add.audio('boom');
+
+	createText();
+	lauchEnemy();
+	pLivesText();
+
+
+
+}
+
+function update() {
+	//BG scroll
+	spacefield.tilePosition.x -=2;
+
+	game.physics.arcade.collide(bullets, enemyShip, playerKillsEnemy, null, this);
+	game.physics.arcade.collide(enemyBullets, player, enemyBulletHitsPlayer, null, this);
+	game.physics.arcade.collide(enemyShip, player, enemyShipHitsPlayer, null, this);
+
+
+
+	//player movements
+	player.body.velocity.y = 0;
+	player.body.velocity.x = 0;
+
+	if (cursors.up.isDown) {
+		player.body.velocity.y = -150;
+		player.animations.play('up');
+		player.animations.stop();
+	}
+	else if (cursors.down.isDown) {
+		player.body.velocity.y = 150;
+		player.animations.play('down');
+		player.animations.stop();
+
+	}
+	else if (cursors.left.isDown) {
+		player.body.velocity.x = -150;
+		player.frame = 4;
+	}
+	else if (cursors.right.isDown) {
+		player.body.velocity.x = 150;
+		player.frame = 4;
+	}
+	else {
+		player.animations.stop();
+		player.frame = 4;
+	}
+
+
+	//Fire
+	if (fireButton.isDown) {
+		fireBullet();
+	}
+}
+
+//player fire
+function fireBullet() {
+	if (game.time.now > bulletTime) {
+		var bullet = bullets.getFirstExists(false);
+	}
+	if (bullet) {
+		bullet.reset(player.x + 75, player.y + 60);
+		bullet.body.velocity.x = 400;
+		bulletTime = game.time.now + 200;
+		game.blaster.play();
+	}
+}
+	//send enemy waves to the field
+	function lauchEnemy() {
+		var startingY = game.rnd.integerInRange(100, 400 - 100);
+		var horizontalSpeed = -50;
+		var spread = 120;
+		var frequency = 70;
+		var verticalSpacing = 70;
+		var horizontalSpacing = 90;
+		var numEnemiesInWave = 10;
+
+		//wave
+		for (var i = 0; i < numEnemiesInWave; i++) {
+			var enemy = enemyShip.getFirstExists(false);
+			if (enemy) {
+				enemy.startingY = startingY;
+				enemy.reset(900 + (i*60), startingY + 150);
+				enemy.body.velocity.x = horizontalSpeed;
+
+				//setting up firing
+				var bulletSpeed = 400;
+				var firingDelay = 1000;
+				enemy.bullets = 2;
+				enemy.lastShot = 0;
+
+
+				enemy.update = function() {
+					this.body.y = this.startingY + Math.sin((this.x) / frequency) * spread;
+
+					//fire
+					enemyFire = enemyBullets.getFirstExists(false);
+					if (enemyFire &&
+							this.alive &&
+							this.bullets &&
+							this.x < 700 &&
+							game.time.now > firingDelay + this.lastShot) {
+								this.lastShot = game.time.now;
+								this.bullets--;
+								enemyFire.reset(this.x -20, this.y + 10);
+								var angle = game.physics.arcade.moveToObject(enemyFire, player, bulletSpeed);
+								enemyFire.angle = game.math.radToDeg(angle);
+							}
+
+
+				};
+			}
+		}
+		enemyLaunchTimer = game.time.events.add(game.rnd.integerInRange(enemyShipSpacing, enemyShipSpacing + 20000),lauchEnemy);
+}
+	//player bullet hits enemy
+	function playerKillsEnemy(bullet, enemy) {
+		bullet.kill();
+		enemy.kill();
+		game.boom.play();
+
+		score += 20;
+		scoreText.destroy();
+		createText();
+
+		var explosion = explosions.getFirstExists(false);
+		explosion.reset(enemy.body.x, enemy.body.y);
+		explosion.play('explo',30, false, true);
+	}
+
+	//enemybullet hits player
+	function enemyBulletHitsPlayer(player, enemyBullets) {
+		playerLives -= 1;
+		enemyBullets.kill();
+		playerHealtText.destroy();
+		pLivesText();
+
+		if (playerLives > -1) {
+			var explosion = explosions.getFirstExists(false);
+			explosion.reset(player.body.x, player.body.y + 20);
+			explosion.play('explo', 30, false, true);
+			game.boom.play();
+		} else {
+			player.kill();
+			enemyShip.destroy();
+			spacefield.destroy();
+			gameOverText();
+		}
+
+
+	}
+	//enemyship hits player
+	function enemyShipHitsPlayer(player, enemy) {
+		playerLives -=1;
+		enemy.kill();
+		playerHealtText.destroy();
+		pLivesText();
+
+		if (playerLives > -1) {
+			var explosion = explosions.getFirstExists(false);
+			explosion.reset(player.body.x, player.body.y + 20);
+			explosion.play('explo', 30, false, true);
+			game.boom.play();
+		} else {
+			player.kill();
+			enemyShip.destroy();
+			spacefield.destroy();
+			gameOverText();
+		}
+	}
+
+	//score update
+function createText() {
+	scoreText = game.add.text(10, 10, "Score:\n" + score);
+	scoreText.font = 'Arial';
+	scoreText.fontSize = 20;
+	scoreText.stroke = '#FFFFFF';
+	scoreText.strokeThickness = 2;
+}
+
+function pLivesText(){
+	playerHealtText = game.add.text(10, 570, "Lives: " + playerLives);
+	playerHealtText.font = 'Arial';
+	playerHealtText.fontSize = 20;
+	playerHealtText.stroke = '#FFFFFF';
+	playerHealtText.strokeThickness = 2;
+}
+
+	function setupExplosions(boom) {
+		boom.animations.add('explo');
+	}
+
+	function gameOverText() {
+		playerHealtText.destroy();
+		scoreText.destroy();
+		gameOverText = game.add.text(game.width / 4, game.height / 2, "GAME OVER");
+		gameOverText.font = 'Arial';
+		gameOverText.fontSize = 60;
+		gameOverText.stroke = '#FFFFFF';
+		gameOverText.strokeThickness = 2;
+
+		scoreText = game.add.text(300 , 450, "Score: " + score);
+		scoreText.font = 'Arial';
+		scoreText.fontSize = 40;
+		scoreText.stroke = '#FFFFFF';
+		scoreText.strokeThickness = 2;
+	}
+
+
+
+</script>
+
+</body>
+</html>
